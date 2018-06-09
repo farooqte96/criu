@@ -42,6 +42,17 @@ struct inet_port {
 	struct list_head list;
 };
 
+static int tcp_repair_on(int fd)
+{
+	int ret, aux = 1;
+
+	ret = setsockopt(fd, SOL_TCP, TCP_REPAIR, &aux, sizeof(aux));
+	if (ret < 0)
+		pr_perror("Can't turn TCP repair mode ON");
+
+	return ret;
+}
+
 static struct inet_port *port_add(struct inet_sk_info *ii, int port)
 {
 	int type = ii->ie->type;
@@ -615,7 +626,7 @@ static void dec_users_and_wake(struct inet_port *port)
 static int post_open_inet_sk(struct file_desc *d, int sk)
 {
 	struct inet_sk_info *ii;
-	int val;
+//	int val;
 
 	ii = container_of(d, struct inet_sk_info, d);
 
@@ -637,13 +648,13 @@ static int post_open_inet_sk(struct file_desc *d, int sk)
 	if (atomic_read(&ii->port->users))
 		return 1;
 
-	val = ii->ie->opts->reuseaddr;
-	if (!val && restore_opt(sk, SOL_SOCKET, SO_REUSEADDR, &val))
-		return -1;
-
-	val = ii->ie->opts->so_reuseport;
-	if (!val && restore_opt(sk, SOL_SOCKET, SO_REUSEPORT, &val))
-		return -1;
+//	val = ii->ie->opts->reuseaddr;
+//	if (!val && restore_opt(sk, SOL_SOCKET, SO_REUSEADDR, &val))
+//		return -1;
+//
+//	val = ii->ie->opts->so_reuseport;
+//	if (!val && restore_opt(sk, SOL_SOCKET, SO_REUSEPORT, &val))
+//		return -1;
 
 	return 0;
 }
@@ -694,6 +705,17 @@ static int open_inet_sk(struct file_desc *d, int *new_fd)
 		return -1;
 	}
 
+	int val;
+	val = ii->ie->opts->reuseaddr;
+	pr_err("reuseaddr %d\n", val);
+	if (val && restore_opt(sk, SOL_SOCKET, SO_REUSEADDR, &val))
+		return -1;
+
+	val = ii->ie->opts->so_reuseport;
+	pr_err("reuseport %d\n", val);
+	if (val && restore_opt(sk, SOL_SOCKET, SO_REUSEPORT, &val))
+		return -1;
+
 	if (ie->v6only) {
 		if (restore_opt(sk, SOL_IPV6, IPV6_V6ONLY, &yes) == -1)
 			goto err;
@@ -703,12 +725,16 @@ static int open_inet_sk(struct file_desc *d, int *new_fd)
 	 * Set SO_REUSEADDR, because some sockets can be bound to one addr.
 	 * The origin value of SO_REUSEADDR will be restored in post_open.
 	 */
-	if (restore_opt(sk, SOL_SOCKET, SO_REUSEADDR, &yes))
-		goto err;
-	if (restore_opt(sk, SOL_SOCKET, SO_REUSEPORT, &yes))
-		goto err;
+//	if (restore_opt(sk, SOL_SOCKET, SO_REUSEADDR, &yes))
+//		goto err;
+//	if (restore_opt(sk, SOL_SOCKET, SO_REUSEPORT, &yes))
+//		goto err;
 
 	if (tcp_connection(ie)) {
+		dump_opt(sk, SOL_SOCKET, SO_REUSEADDR, &val);
+		pr_err("reuseaddr %d\n", val);
+		dump_opt(sk, SOL_SOCKET, SO_REUSEPORT, &val);
+		pr_err("reuseport %d\n", val);
 		if (!opts.tcp_established_ok && !opts.tcp_close) {
 			pr_err("Connected TCP socket in image\n");
 			goto err;
@@ -721,12 +747,20 @@ static int open_inet_sk(struct file_desc *d, int *new_fd)
 		}
 		mutex_unlock(&ii->port->reuseaddr_lock);
 
+		dump_opt(sk, SOL_SOCKET, SO_REUSEADDR, &val);
+		pr_err("reuseaddr %d\n", val);
+		dump_opt(sk, SOL_SOCKET, SO_REUSEPORT, &val);
+		pr_err("reuseport %d\n", val);
+
 		goto done;
 	}
 
 	if (ie->src_port) {
+		tcp_repair_on(sk);
 		if (inet_bind(sk, ii))
 			goto err;
+		pr_err("bind\n");
+		tcp_repair_off(sk);
 	}
 
 	/*
@@ -740,11 +774,14 @@ static int open_inet_sk(struct file_desc *d, int *new_fd)
 		}
 
 		mutex_lock(&ii->port->reuseaddr_lock);
+		tcp_repair_on(sk);
 		if (listen(sk, ie->backlog) == -1) {
 			pr_perror("Can't listen on a socket");
 			mutex_unlock(&ii->port->reuseaddr_lock);
 			goto err;
 		}
+		pr_err("listen\n");
+		tcp_repair_off(sk);
 		mutex_unlock(&ii->port->reuseaddr_lock);
 	}
 
