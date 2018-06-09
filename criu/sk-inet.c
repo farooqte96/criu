@@ -742,6 +742,11 @@ static int open_inet_sk(struct file_desc *d, int *new_fd)
 			goto err;
 		}
 		mutex_unlock(&ii->port->reuseaddr_lock);
+               dump_opt(sk, SOL_SOCKET, SO_REUSEADDR, &val);
+               pr_err("reuseaddr %d\n", val);
+               dump_opt(sk, SOL_SOCKET, SO_REUSEPORT, &val);
+               pr_err("reuseport %d\n", val);
+
 		goto done;
 	}
 
@@ -802,6 +807,10 @@ done:
 			goto err;
 		}
 	}
+               dump_opt(sk, SOL_SOCKET, SO_REUSEADDR, &val);
+               pr_err("reuseaddr %d\n", val);
+               dump_opt(sk, SOL_SOCKET, SO_REUSEPORT, &val);
+               pr_err("reuseport %d\n", val);
 
 	*new_fd = sk;
 	return 1;

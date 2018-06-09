@@ -30,7 +30,7 @@ int main(int argc, char **argv)
 		goto out;
 	}
 
-	if (strcmp(env, test_author))
+	if (1 || strcmp(env, test_author))
 		fail("%s != %s\n", env, test_author);
 	else
 		pass();
