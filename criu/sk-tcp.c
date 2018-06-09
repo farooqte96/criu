@@ -418,12 +418,6 @@ int restore_one_tcp(int fd, struct inet_sk_info *ii)
 	if (!sk)
 		return -1;
 
-	int val;
-		dump_opt(fd, SOL_SOCKET, SO_REUSEADDR, &val);
-		pr_err("reuseaddr %d\n", val);
-		dump_opt(fd, SOL_SOCKET, SO_REUSEPORT, &val);
-		pr_err("reuseport %d\n", val);
-
 	if (restore_tcp_conn_state(fd, sk, ii)) {
 		libsoccr_release(sk);
 		return -1;

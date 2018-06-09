@@ -731,10 +731,6 @@ static int open_inet_sk(struct file_desc *d, int *new_fd)
 //		goto err;
 
 	if (tcp_connection(ie)) {
-		dump_opt(sk, SOL_SOCKET, SO_REUSEADDR, &val);
-		pr_err("reuseaddr %d\n", val);
-		dump_opt(sk, SOL_SOCKET, SO_REUSEPORT, &val);
-		pr_err("reuseport %d\n", val);
 		if (!opts.tcp_established_ok && !opts.tcp_close) {
 			pr_err("Connected TCP socket in image\n");
 			goto err;
@@ -746,21 +742,16 @@ static int open_inet_sk(struct file_desc *d, int *new_fd)
 			goto err;
 		}
 		mutex_unlock(&ii->port->reuseaddr_lock);
-
-		dump_opt(sk, SOL_SOCKET, SO_REUSEADDR, &val);
-		pr_err("reuseaddr %d\n", val);
-		dump_opt(sk, SOL_SOCKET, SO_REUSEPORT, &val);
-		pr_err("reuseport %d\n", val);
-
 		goto done;
 	}
 
 	if (ie->src_port) {
-		tcp_repair_on(sk);
+		if (ie->proto == IPPROTO_TCP)
+			tcp_repair_on(sk);
 		if (inet_bind(sk, ii))
 			goto err;
-		pr_err("bind\n");
-		tcp_repair_off(sk);
+		if (ie->proto == IPPROTO_TCP)
+			tcp_repair_off(sk);
 	}
 
 	/*
@@ -774,14 +765,16 @@ static int open_inet_sk(struct file_desc *d, int *new_fd)
 		}
 
 		mutex_lock(&ii->port->reuseaddr_lock);
-		tcp_repair_on(sk);
+		if (ie->proto == IPPROTO_TCP)
+			tcp_repair_on(sk);
 		if (listen(sk, ie->backlog) == -1) {
 			pr_perror("Can't listen on a socket");
 			mutex_unlock(&ii->port->reuseaddr_lock);
 			goto err;
 		}
 		pr_err("listen\n");
-		tcp_repair_off(sk);
+		if (ie->proto == IPPROTO_TCP)
+			tcp_repair_off(sk);
 		mutex_unlock(&ii->port->reuseaddr_lock);
 	}
 
