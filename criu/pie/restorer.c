@@ -836,7 +836,7 @@ static void rst_tcp_repair_off(struct rst_tcp_sock *rts)
 	int aux;
 
 	aux = rts->reuseaddr;
-	pr_err("pie: Turning repair off for %d (reuse %d)\n", rts->sk, aux);
+	pr_debug("pie: Turning repair off for %d (reuse %d)\n", rts->sk, aux);
 	tcp_repair_off(rts->sk);
 }
 

@@ -38,20 +38,10 @@ struct inet_port {
 	int type;
 	struct list_head type_list;
 	atomic_t users;
+	atomic_t listeners;
 	mutex_t reuseaddr_lock;
 	struct list_head list;
 };
-
-static int tcp_repair_on(int fd)
-{
-	int ret, aux = 1;
-
-	ret = setsockopt(fd, SOL_TCP, TCP_REPAIR, &aux, sizeof(aux));
-	if (ret < 0)
-		pr_perror("Can't turn TCP repair mode ON");
-
-	return ret;
-}
 
 static struct inet_port *port_add(struct inet_sk_info *ii, int port)
 {
@@ -60,6 +50,8 @@ static struct inet_port *port_add(struct inet_sk_info *ii, int port)
 
 	list_for_each_entry(e, &inet_ports, list)
 		if (e->type == type && e->port == port) {
+			if (ii->ie->state == TCP_LISTEN)
+				atomic_inc(&e->listeners);
 			atomic_inc(&e->users);
 			goto out_link;
 		}
@@ -73,6 +65,9 @@ static struct inet_port *port_add(struct inet_sk_info *ii, int port)
 	e->port = port;
 	e->type = type;
 	atomic_set(&e->users, 1);
+	atomic_set(&e->listeners, 0);
+	if (ii->ie->state == TCP_LISTEN)
+		atomic_inc(&e->listeners);
 	mutex_init(&e->reuseaddr_lock);
 	INIT_LIST_HEAD(&e->type_list);
 
@@ -623,6 +618,19 @@ static void dec_users_and_wake(struct inet_port *port)
 	}
 }
 
+static void dec_listeners_and_wake(struct inet_port *port)
+{
+	struct fdinfo_list_entry *fle;
+	struct inet_sk_info *ii;
+
+	if (atomic_dec_return(&port->listeners))
+		return;
+	list_for_each_entry(ii, &port->type_list, port_list) {
+		fle = file_master(&ii->d);
+		set_fds_event(fle->pid);
+	}
+}
+
 static int post_open_inet_sk(struct file_desc *d, int sk)
 {
 	struct inet_sk_info *ii;
@@ -681,6 +689,10 @@ static int open_inet_sk(struct file_desc *d, int *new_fd)
 	ii = container_of(d, struct inet_sk_info, d);
 	ie = ii->ie;
 
+	if (ie->state != TCP_LISTEN && atomic_read(&ii->port->listeners)) {
+		pr_err("asdfa\n");
+		return 1;
+	}
 	show_one_inet_img("Restore", ie);
 
 	if (ie->family != AF_INET && ie->family != AF_INET6) {
@@ -707,12 +719,10 @@ static int open_inet_sk(struct file_desc *d, int *new_fd)
 
 	int val;
 	val = ii->ie->opts->reuseaddr;
-	pr_err("reuseaddr %d\n", val);
 	if (val && restore_opt(sk, SOL_SOCKET, SO_REUSEADDR, &val))
 		return -1;
 
 	val = ii->ie->opts->so_reuseport;
-	pr_err("reuseport %d\n", val);
 	if (val && restore_opt(sk, SOL_SOCKET, SO_REUSEPORT, &val))
 		return -1;
 
@@ -720,15 +730,6 @@ static int open_inet_sk(struct file_desc *d, int *new_fd)
 		if (restore_opt(sk, SOL_IPV6, IPV6_V6ONLY, &yes) == -1)
 			goto err;
 	}
-
-	/*
-	 * Set SO_REUSEADDR, because some sockets can be bound to one addr.
-	 * The origin value of SO_REUSEADDR will be restored in post_open.
-	 */
-//	if (restore_opt(sk, SOL_SOCKET, SO_REUSEADDR, &yes))
-//		goto err;
-//	if (restore_opt(sk, SOL_SOCKET, SO_REUSEPORT, &yes))
-//		goto err;
 
 	if (tcp_connection(ie)) {
 		if (!opts.tcp_established_ok && !opts.tcp_close) {
@@ -742,21 +743,13 @@ static int open_inet_sk(struct file_desc *d, int *new_fd)
 			goto err;
 		}
 		mutex_unlock(&ii->port->reuseaddr_lock);
-               dump_opt(sk, SOL_SOCKET, SO_REUSEADDR, &val);
-               pr_err("reuseaddr %d\n", val);
-               dump_opt(sk, SOL_SOCKET, SO_REUSEPORT, &val);
-               pr_err("reuseport %d\n", val);
 
 		goto done;
 	}
 
 	if (ie->src_port) {
-		if (ie->proto == IPPROTO_TCP)
-			tcp_repair_on(sk);
 		if (inet_bind(sk, ii))
 			goto err;
-		if (ie->proto == IPPROTO_TCP)
-			tcp_repair_off(sk);
 	}
 
 	/*
@@ -770,16 +763,12 @@ static int open_inet_sk(struct file_desc *d, int *new_fd)
 		}
 
 		mutex_lock(&ii->port->reuseaddr_lock);
-		if (ie->proto == IPPROTO_TCP)
-			tcp_repair_on(sk);
 		if (listen(sk, ie->backlog) == -1) {
 			pr_perror("Can't listen on a socket");
 			mutex_unlock(&ii->port->reuseaddr_lock);
 			goto err;
 		}
 		pr_err("listen\n");
-		if (ie->proto == IPPROTO_TCP)
-			tcp_repair_off(sk);
 		mutex_unlock(&ii->port->reuseaddr_lock);
 	}
 
@@ -788,6 +777,8 @@ static int open_inet_sk(struct file_desc *d, int *new_fd)
 		goto err;
 done:
 	dec_users_and_wake(ii->port);
+	if (ie->state == TCP_LISTEN)
+		dec_listeners_and_wake(ii->port);
 
 	if (rst_file_params(sk, ie->fown, ie->flags))
 		goto err;
@@ -807,10 +798,6 @@ done:
 			goto err;
 		}
 	}
-               dump_opt(sk, SOL_SOCKET, SO_REUSEADDR, &val);
-               pr_err("reuseaddr %d\n", val);
-               dump_opt(sk, SOL_SOCKET, SO_REUSEPORT, &val);
-               pr_err("reuseport %d\n", val);
 
 	*new_fd = sk;
 	return 1;

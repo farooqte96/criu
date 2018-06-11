@@ -12,7 +12,7 @@ union sockaddr_inet {
 int tcp_init_server(int family, int *port)
 {
 	struct zdtm_tcp_opts opts = {
-		.reuseaddr = true,
+		.reuseaddr = false,
 		.reuseport = false,
 	};
 
@@ -28,7 +28,7 @@ int tcp_init_server_with_opts(int family, int *port, struct zdtm_tcp_opts *opts)
 	memset(&addr,0,sizeof(addr));
 	if (family == AF_INET) {
 		addr.v4.sin_family = family;
-		inet_pton(family, "0.0.0.0", &(addr.v4.sin_addr));
+		inet_pton(family, "127.0.0.1", &(addr.v4.sin_addr));
 	} else if (family == AF_INET6){
 		addr.v6.sin6_family = family;
 		inet_pton(family, "::0", &(addr.v6.sin6_addr));

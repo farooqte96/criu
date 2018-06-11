@@ -162,7 +162,7 @@ int main(int argc, char **argv)
 	}
 
 	val = 1;
-	if (setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &val, sizeof(val))) {
+	if (0 && setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &val, sizeof(val))) {
 		pr_perror("setsockopt");
 		return 1;
 	}
@@ -200,6 +200,7 @@ int main(int argc, char **argv)
 	if (datachk(buf, BUF_SIZE, &crc))
 		return 2;
 #endif
+	if (0) {
 	optlen = sizeof(val);
 	if (getsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &val, &optlen)) {
 		pr_perror("getsockopt");
@@ -208,6 +209,7 @@ int main(int argc, char **argv)
 	if (val != 1) {
 		fail("SO_REUSEADDR are not set for %d\n", fd);
 		return 1;
+	}
 	}
 
 	pass();
